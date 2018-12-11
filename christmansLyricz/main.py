@@ -1,68 +1,80 @@
-import numpy as np
-import pandas as pd
+import sys
+import numpy
 from keras.models import Sequential
 from keras.layers import Dense
 from keras.layers import Dropout
 from keras.layers import LSTM
+from keras.callbacks import ModelCheckpoint
 from keras.utils import np_utils
-
-text = open("lyrics.txt").read()
-chars = sorted(list(set(text)))
-
-n_to_char = {n:char for n, char in enumerate(chars)}
-char_to_n = {char:n for n, char in enumerate(chars)}
-
-x = []
-y = []
-length = len(text)
+# load ascii text and covert to lowercase
+filename = "lyrics.txt"
+raw_text = open(filename).read()
+raw_text = raw_text.lower()
+# create mapping of unique chars to integers, and a reverse mapping
+chars = sorted(list(set(raw_text)))
+char_to_int = dict((c, i) for i, c in enumerate(chars))
+int_to_char = dict((i, c) for i, c in enumerate(chars))
+# summarize the loaded data
+n_chars = len(raw_text)
+n_vocab = len(chars)
+print ("Total Characters: ", n_chars)
+print ("Total Vocab: ", n_vocab)
+# prepare the dataset of input to output pairs encoded as integers
 seq_length = 100
-for i in range(0, length - seq_length, 1):
-    sequence = text[i:i + seq_length]
-    label = text[i + seq_length]
-    x.append([char_to_n[char] for char in sequence])
-    y.append(char_to_n[label])
-
-
-X_modified = np.reshape(x, (len(x), seq_length, 1))
-X_modified = X_modified / float(len(chars))
-Y_modified = np_utils.to_categorical(y)
-
+dataX = []
+dataY = []
+for i in range(0, n_chars - seq_length, 1):
+	seq_in = raw_text[i:i + seq_length]
+	seq_out = raw_text[i + seq_length]
+	dataX.append([char_to_int[char] for char in seq_in])
+	dataY.append(char_to_int[seq_out])
+n_patterns = len(dataX)
+print ("Total Patterns: ", n_patterns)
+# reshape X to be [samples, time steps, features]
+X = numpy.reshape(dataX, (n_patterns, seq_length, 1))
+# normalize
+X = X / float(n_vocab)
+# one hot encode the output variable
+y = np_utils.to_categorical(dataY)
+# define the LSTM model
 model = Sequential()
-
-model.add((LSTM(700, input_shape=(X_modified.shape[1], X_modified.shape[2]), return_sequences=True)))
+model.add(LSTM(256, input_shape=(X.shape[1], X.shape[2]), return_sequences=True))
 model.add(Dropout(0.2))
-model.add(LSTM(700))
+model.add(LSTM(256))
 model.add(Dropout(0.2))
-
-model.add(Dense(Y_modified.shape[1], activation='softmax'))
+model.add(Dense(y.shape[1], activation='softmax'))
+# load the network weights
+filename = "weights-improvement-47-1.2219-bigger.hdf5"
 
 model.compile(loss='categorical_crossentropy', optimizer='adam')
+model.fit(X, y, epochs=50, batch_size=64)
+model.save_weights(filename)
+# pick a random seed
+start = numpy.random.randint(0, len(dataX)-1)
+pattern = dataX[start]
+print ("Seed:")
+print ("\"", ''.join([int_to_char[value] for value in pattern]), "\"")
+# full_string = [n_to_char[value] for value in string_mapped]
+# generate characters
+for i in range(1000):
+	x = numpy.reshape(pattern, (1, len(pattern), 1))
+	x = x / float(n_vocab)
+	prediction = model.predict(x, verbose=0)
+	index = numpy.argmax(prediction)
+	result = int_to_char[index]
+	seq_in = [int_to_char[value] for value in pattern]
 
-model.fit(X_modified, Y_modified, epochs=100, batch_size=50)
+	sys.stdout.write(result)
 
-model.save_weights('text_generator_700_0.2_700_0.2_100.h5')
-
-model.load_weights('text_generator_700_0.2_700_0.2_100.h5')
-
-
-string_mapped = x[99]
-full_string = [n_to_char[value] for value in string_mapped]
-# generating characters
-for i in range(seq_length):
-    x_val = np.reshape(string_mapped,(1,len(string_mapped), 1))
-    x_val = x_val / float(len(chars))
-    pred_index = np.argmax(model.predict(x_val, verbose=0))
-    seq = [n_to_char[value] for value in string_mapped]
-    full_string.append(n_to_char[pred_index])
-
-    string_mapped.append(pred_index)
-    string_mapped = string_mapped[1:len(string_mapped)]
+    # full_string.append(n_to_char[pred_index])
+	pattern.append(index)
+	pattern = pattern[1:len(pattern)]
+print ("\nDone.")
 
 
-
-#combining text
-txt=""
-for char in full_string:
-    txt = txt+char
-print(txt)
+# #combining text
+# txt=""
+# for char in full_string:
+#     txt = txt+char
+# print(txt)
 
